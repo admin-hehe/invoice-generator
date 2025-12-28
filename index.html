@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Index Invoice Fix</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f1f5f9; color: #1e293b; }
+        .preview-scroll-container { width: 100%; overflow-x: auto; padding: 20px 0; -webkit-overflow-scrolling: touch; }
+        #invoice { width: 210mm; min-height: 297mm; background: white; padding: 20mm; box-sizing: border-box; margin: 0 auto; box-shadow: 0 4px 25px rgba(0,0,0,0.1); position: relative; }
+        .blueprint-accent { border-left: 4px solid #0f172a; padding-left: 1rem; }
+        .btn-primary { background: #0f172a; color: white; transition: all 0.3s; }
+        .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; }
+        #signature-pad { border: 2px dashed #cbd5e1; border-radius: 8px; background: #f8fafc; touch-action: none; }
+        @media print { .no-print { display: none; } }
+    </style>
+</head>
+<body class="pb-20">
+
+    <div class="max-w-4xl mx-auto my-5 md:my-10 bg-white p-5 md:p-8 rounded-2xl shadow-xl no-print border border-slate-200">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+            <h2 class="text-2xl md:text-3xl font-extrabold text-slate-900">Invoice <span class="text-blue-600">Generator</span></h2>
+            <span class="bg-blue-50 text-blue-700 px-4 py-1 rounded-full text-xs font-bold">Pro Edition v1.0</span>
+        </div>
+
+        <form id="invoiceForm">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-8">
+                <div class="space-y-4">
+                    <input type="text" id="picName" placeholder="Nama PIC (Anda)" class="w-full p-3 border rounded-lg text-sm" oninput="updateDisp()">
+                    <input type="text" id="custName" placeholder="Nama Customer" class="w-full p-3 border rounded-lg text-sm" oninput="updateDisp()">
+                    <textarea id="custAddr" placeholder="Alamat Customer" class="w-full p-3 border rounded-lg text-sm" rows="3" oninput="updateDisp()"></textarea>
+                </div>
+                <div class="space-y-4">
+                    <input type="text" id="invNumber" placeholder="Loading No Invoice..." class="w-full p-3 border rounded-lg bg-slate-50 font-bold text-blue-700 text-sm" readonly>
+                    <input type="date" id="invDate" class="w-full p-3 border rounded-lg text-sm" oninput="updateDisp()">
+                    <select id="payMethod" class="w-full p-3 border rounded-lg text-sm" onchange="updateDisp()">
+                        <option value="Pelunasan Penuh (100%)">Pelunasan Penuh (100%)</option>
+                        <option value="DP 50% - Pelunasan Sebelum Kirim">DP 50%</option>
+                        <option value="Termin 30 Hari (Net 30)">Termin 30 Hari (Net 30)</option>
+                        <option value="DP 30% - Progres 40% - Lunas 30%">DP 30% - Progres 40% - Lunas 30%</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="itemContainer" class="space-y-3 mb-4">
+                <div class="grid grid-cols-12 gap-2 item-row bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <input type="text" class="col-span-12 md:col-span-6 item-desc p-2 rounded border text-sm" placeholder="Nama Produk/Jasa" oninput="calculate()">
+                    <input type="number" class="col-span-4 md:col-span-2 item-qty p-2 rounded border text-sm" placeholder="Qty" oninput="calculate()">
+                    <input type="number" class="col-span-6 md:col-span-3 item-price p-2 rounded border text-sm" placeholder="Harga" oninput="calculate()">
+                    <button type="button" onclick="removeItem(this)" class="col-span-2 md:col-span-1 text-red-500 font-bold text-xl">✕</button>
+                </div>
+            </div>
+            <button type="button" onclick="addItem()" class="mb-8 text-blue-600 font-bold text-xs hover:underline uppercase tracking-wider">+ Tambah Baris Produk</button>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 border-t pt-8">
+                <div class="space-y-4">
+                    <h4 class="font-bold text-slate-700 text-sm underline">Informasi Bank & Jabatan</h4>
+                    <div class="grid grid-cols-1 gap-3">
+                        <select id="bankName" class="w-full p-2 border rounded bg-white text-sm" onchange="updateDisp()">
+                            <option value="">-- Pilih Bank --</option>
+                            <option value="BCA">BCA</option><option value="Mandiri">Mandiri</option><option value="BNI">BNI</option>
+                            <option value="BRI">BRI</option><option value="BSI">BSI</option>
+                        </select>
+                        <input type="text" id="bankAcc" placeholder="No. Rekening" class="w-full p-2 border rounded text-sm" oninput="updateDisp()">
+                        <input type="text" id="bankUser" placeholder="Nama Pemilik Rekening" class="w-full p-2 border rounded text-sm" oninput="updateDisp()">
+                        <input type="text" id="position" placeholder="Jabatan" class="w-full p-2 border rounded text-sm" oninput="updateDisp()">
+                    </div>
+                    
+                    <div class="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                        <label class="text-[10px] font-bold text-blue-600 uppercase tracking-widest block mb-2">Diskon</label>
+                        <div class="flex gap-2">
+                            <select id="discountType" class="flex-1 p-2 border rounded text-xs" onchange="toggleDiscountInput()">
+                                <option value="none">Tanpa Diskon</option>
+                                <option value="percent">%</option>
+                                <option value="flat">Rp</option>
+                            </select>
+                            <input type="number" id="discountVal" placeholder="0" class="flex-1 hidden p-2 border rounded border-blue-400 text-xs" oninput="calculate()">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex flex-col items-center">
+                    <h4 class="font-bold text-slate-700 mb-2 text-sm self-start md:self-center underline">Tanda Tangan Digital (Opsional)</h4>
+                    <div class="w-full max-w-[400px]">
+                        <canvas id="signature-pad" class="w-full h-40"></canvas>
+                        <button type="button" onclick="signaturePad.clear()" class="text-[10px] text-red-500 mt-2 font-bold uppercase tracking-widest">Hapus Tanda Tangan</button>
+                    </div>
+                </div>
+            </div>
+
+            <button type="button" onclick="generatePDF()" id="mainBtn" class="w-full mt-10 btn-primary py-4 rounded-xl font-extrabold text-lg shadow-lg active:scale-95 transition-transform">
+                SIMPAN & DOWNLOAD PDF
+            </button>
+        </form>
+    </div>
+<p class="text-center text-slate-400 text-[10px] uppercase font-bold no-print mb-2">Preview Invoice (Swipe horizontal untuk melihat)</p>
+    <div class="preview-scroll-container">
+        <div id="invoice">
+            <div class="border-b-4 border-slate-900 pb-6 mb-8">
+                <div id="logo-container" class="hidden mb-4"><img id="disp-logo" crossorigin="anonymous" class="max-h-16 w-auto object-contain"></div>
+                <div class="flex justify-between items-end">
+                    <div class="blueprint-accent">
+                        <h1 id="disp-kopNama" class="text-3xl font-extrabold uppercase text-slate-900 leading-none">LOADING...</h1>
+                        <p id="disp-kopAlamat" class="text-[10px] text-slate-500 max-w-sm mt-2 font-medium"></p>
+                    </div>
+                    <div class="text-right">
+                        <h2 class="text-6xl font-black text-slate-100 tracking-tighter leading-none mb-1">INVOICE</h2>
+                        <p class="font-bold text-slate-700 text-sm" id="disp-invNumberText">-</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-10 mb-8 text-sm">
+                <div>
+                    <p class="text-slate-400 font-bold uppercase text-[10px] mb-1 tracking-widest">Customer</p>
+                    <p id="disp-custName" class="text-lg font-bold text-slate-900">-</p>
+                    <p id="disp-custAddr" class="text-slate-500 leading-relaxed">-</p>
+                </div>
+                <div class="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <div><p class="text-slate-400 font-bold uppercase text-[10px]">Tanggal</p><p id="disp-invDate" class="font-bold">-</p></div>
+                    <div><p class="text-slate-400 font-bold uppercase text-[10px]">PIC</p><p id="disp-picName" class="font-bold">-</p></div>
+                </div>
+            </div>
+
+            <table class="w-full mb-8">
+                <thead class="bg-slate-900 text-white">
+                    <tr>
+                        <th class="py-3 px-4 text-left rounded-l-lg text-[10px] uppercase">Deskripsi</th>
+                        <th class="py-3 px-4 text-center text-[10px] uppercase">Qty</th>
+                        <th class="py-3 px-4 text-right text-[10px] uppercase">Harga</th>
+                        <th class="py-3 px-4 text-right rounded-r-lg text-[10px] uppercase">Total</th>
+                    </tr>
+                </thead>
+                <tbody id="disp-items" class="text-xs"></tbody>
+            </table>
+
+            <div class="flex justify-end mb-6">
+                <div class="w-64 space-y-2">
+                    <div class="flex justify-between text-slate-500 text-xs"><span>Subtotal</span> <span id="disp-subtotal">Rp 0</span></div>
+                    <div class="flex justify-between text-red-500 text-xs italic"><span>Diskon</span> <span id="disp-discount">Rp 0</span></div>
+                    <div class="flex justify-between border-t-2 border-slate-900 pt-2 font-black text-xl text-slate-900">
+                        <span>TOTAL</span> <span id="disp-total">Rp 0</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-slate-50 p-3 rounded mb-8 border-l-4 border-blue-500">
+                <p id="disp-terbilang" class="italic font-semibold text-slate-700 capitalize text-[11px]"></p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-10 mt-12">
+                <div class="text-[10px] space-y-2 border-l-2 pl-4">
+                    <p class="font-bold uppercase tracking-widest border-b pb-1">Pembayaran</p>
+                    <p><span class="text-slate-400">Metode:</span> <span id="disp-payMethod" class="font-bold"></span></p>
+                    <p><span id="disp-bankNameText"></span> - <span id="disp-bankAcc"></span></p>
+                    <p>A/N: <span id="disp-bankUser" class="font-bold"></span></p>
+                </div>
+                <div class="text-center">
+                    <p class="text-[10px] text-slate-400 uppercase mb-4" id="disp-locationDate">Badung, -</p>
+                    <div class="relative h-20 flex justify-center items-center">
+                        <img id="disp-signature" class="h-20 w-auto hidden object-contain relative z-10">
+                        <div class="absolute inset-0 flex items-center justify-center text-slate-100 italic text-[10px] border border-dashed border-slate-100 rounded" id="sig-placeholder">(Tanda Tangan)</div>
+                    </div>
+                    <p id="disp-signerName" class="font-black text-slate-900 uppercase text-xs border-t-2 border-slate-900 mt-2 pt-1">-</p>
+                    <p id="disp-signerPosition" class="text-[9px] text-blue-600 font-bold uppercase mt-1">-</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const G_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyn3shJ5T2X5QIQh6NDnTPxrVAAPnL37ISuZytKSJE_nilkgczLhNsUuoA5ei1CDfRT/exec"; // Masukkan URL hasil Deploy 'Anyone' Anda di sini
+        let signaturePad;
+
+        function resizeCanvas() {
+            const canvas = document.getElementById("signature-pad");
+            const ratio = Math.max(window.devicePixelRatio || 1, 1);
+            canvas.width = canvas.offsetWidth * ratio;
+            canvas.height = canvas.offsetHeight * ratio;
+            canvas.getContext("2d").scale(ratio, ratio);
+        }
+
+        async function fetchInvoiceData() {
+            try {
+                const res = await fetch(G_SCRIPT_URL);
+                const data = await res.json();
+                document.getElementById('invNumber').value = `${data.nextNo}/INV/${data.year}`;
+                document.getElementById('disp-invNumberText').innerText = document.getElementById('invNumber').value;
+                document.getElementById('disp-kopNama').innerText = data.kopNama;
+                document.getElementById('disp-kopAlamat').innerText = data.kopAlamat;
+                if (data.kopLogo) {
+                    document.getElementById('disp-logo').src = data.kopLogo;
+                    document.getElementById('logo-container').classList.remove('hidden');
+                }
+            } catch (e) { console.log("Fetch Error: ", e); }
+        }
+
+        window.onload = () => {
+            const canvas = document.getElementById("signature-pad");
+            signaturePad = new SignaturePad(canvas);
+            window.addEventListener("resize", resizeCanvas);
+            resizeCanvas();
+            fetchInvoiceData();
+        };
+
+        function resetSystem() {
+            document.getElementById('invoiceForm').reset();
+            document.getElementById('itemContainer').innerHTML = `<div class="grid grid-cols-12 gap-2 item-row bg-slate-50 p-3 rounded-lg border border-slate-100"><input type="text" class="col-span-12 md:col-span-6 item-desc p-2 rounded border text-sm" placeholder="Nama Produk/Jasa" oninput="calculate()"><input type="number" class="col-span-4 md:col-span-2 item-qty p-2 rounded border text-sm" placeholder="Qty" oninput="calculate()"><input type="number" class="col-span-6 md:col-span-3 item-price p-2 rounded border text-sm" placeholder="Harga" oninput="calculate()"><button type="button" onclick="removeItem(this)" class="col-span-2 md:col-span-1 text-red-500 font-bold text-xl">✕</button></div>`;
+            signaturePad.clear();
+            document.getElementById('disp-signature').classList.add('hidden');
+            document.getElementById('sig-placeholder').classList.remove('hidden');
+            document.getElementById('discountVal').classList.add('hidden');
+            calculate();
+            fetchInvoiceData();
+        }
+
+        function toggleDiscountInput() {
+            const valInput = document.getElementById('discountVal');
+            valInput.classList.toggle('hidden', document.getElementById('discountType').value === 'none');
+            calculate();
+        }
+
+        function addItem() {
+            const html = `<div class="grid grid-cols-12 gap-2 item-row bg-slate-50 p-3 rounded-lg border border-slate-100 mt-2"><input type="text" class="col-span-12 md:col-span-6 item-desc p-2 rounded border text-sm" placeholder="Nama Produk" oninput="calculate()"><input type="number" class="col-span-4 md:col-span-2 item-qty p-2 rounded border text-sm" placeholder="Qty" oninput="calculate()"><input type="number" class="col-span-6 md:col-span-3 item-price p-2 rounded border text-sm" placeholder="Harga" oninput="calculate()"><button type="button" onclick="removeItem(this)" class="col-span-2 md:col-span-1 text-red-500 font-bold text-xl">✕</button></div>`;
+            document.getElementById('itemContainer').insertAdjacentHTML('beforeend', html);
+        }
+
+        function removeItem(btn) { btn.parentElement.remove(); calculate(); }
+        function formatIDR(n) { return "Rp " + new Intl.NumberFormat('id-ID').format(n); }
+
+        function terbilang(n) {
+            const ambil = ["", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh", "sebelas"];
+            if (n < 12) return ambil[n];
+            if (n < 20) return terbilang(n - 10) + " belas";
+            if (n < 100) return terbilang(Math.floor(n / 10)) + " puluh " + terbilang(n % 10);
+            if (n < 1000) return terbilang(Math.floor(n / 100)) + " ratus " + terbilang(n % 100);
+            if (n < 1000000) return terbilang(Math.floor(n / 1000)) + " ribu " + terbilang(n % 1000);
+            if (n < 1000000000) return terbilang(Math.floor(n / 1000000)) + " juta " + terbilang(n % 1000000);
+            return "";
+        }
+
+        function updateDisp() {
+            const fields = ['custName','custAddr','invDate','picName','payMethod','bankAcc','bankUser','position'];
+            fields.forEach(f => {
+                const el = document.getElementById('disp-' + f);
+                if(el) el.innerText = document.getElementById(f).value || '-';
+            });
+            document.getElementById('disp-bankNameText').innerText = document.getElementById('bankName').value;
+            document.getElementById('disp-signerName').innerText = document.getElementById('picName').value || '-';
+            document.getElementById('disp-signerPosition').innerText = document.getElementById('position').value || '-';
+            document.getElementById('disp-locationDate').innerText = `Badung, ${document.getElementById('invDate').value}`;
+        }
+
+        function calculate() {
+            let sub = 0; let html = '';
+            document.querySelectorAll('.item-row').forEach(row => {
+                const d = row.querySelector('.item-desc').value;
+                const q = parseFloat(row.querySelector('.item-qty').value) || 0;
+                const p = parseFloat(row.querySelector('.item-price').value) || 0;
+                const t = q * p; sub += t;
+                if(d) html += `<tr class="border-b border-slate-50"><td class="py-3 px-4 text-slate-700">${d}</td><td class="text-center">${q}</td><td class="text-right">${formatIDR(p)}</td><td class="text-right font-bold text-slate-900">${formatIDR(t)}</td></tr>`;
+            });
+            const dType = document.getElementById('discountType').value;
+            const dVal = parseFloat(document.getElementById('discountVal').value) || 0;
+            const diskon = (dType === 'percent') ? sub * (dVal/100) : (dType === 'flat' ? dVal : 0);
+            const net = sub - diskon;
+            document.getElementById('disp-items').innerHTML = html;
+            document.getElementById('disp-subtotal').innerText = formatIDR(sub);
+            document.getElementById('disp-discount').innerText = "- " + formatIDR(diskon);
+            document.getElementById('disp-total').innerText = formatIDR(net);
+            document.getElementById('disp-terbilang').innerText = terbilang(net) + " Rupiah";
+            updateDisp();
+        }
+
+        async function generatePDF() {
+            const btn = document.getElementById('mainBtn');
+            const element = document.getElementById('invoice');
+            if(!document.getElementById('picName').value || !document.getElementById('custName').value) {
+                Swal.fire('Oops!', 'Nama PIC dan Customer wajib diisi', 'warning'); return;
+            }
+            btn.innerText = "Menyimpan ke Database...";
+            btn.disabled = true;
+
+            // KUMPULKAN DATA PRODUK (GABUNGAN)
+            let allProducts = []; let allQtys = []; let allPrices = [];
+            document.querySelectorAll('.item-row').forEach(row => {
+                if(row.querySelector('.item-desc').value) {
+                    allProducts.push(row.querySelector('.item-desc').value);
+                    allQtys.push(row.querySelector('.item-qty').value);
+                    allPrices.push(row.querySelector('.item-price').value);
+                }
+            });
+
+            // SINKRONKAN DENGAN code.gs ANDA
+            const invoiceData = {
+                pic: document.getElementById('picName').value,
+                no: document.getElementById('invNumber').value,
+                date: document.getElementById('invDate').value,
+                customer: document.getElementById('custName').value,
+                alamat: document.getElementById('custAddr').value,
+                produk: allProducts.join(", "), // Digabung koma
+                qty: allQtys.join(", "),
+                harga: allPrices.join(", "),
+                diskon: document.getElementById('disp-discount').innerText,
+                jabatan: document.getElementById('position').value,
+                bankName: document.getElementById('bankName').value,
+                noRek: document.getElementById('bankAcc').value,
+                namaRek: document.getElementById('bankUser').value
+            };
+
+            try {
+                // KIRIM POST
+                await fetch(G_SCRIPT_URL, { method: 'POST', mode: 'no-cors', cache: 'no-cache', body: JSON.stringify(invoiceData) });
+                
+                // LANJUT PDF
+                btn.innerText = "Membuat PDF...";
+                if (!signaturePad.isEmpty()) {
+                    document.getElementById('disp-signature').src = signaturePad.toDataURL();
+                    document.getElementById('disp-signature').classList.remove('hidden');
+                    document.getElementById('sig-placeholder').classList.add('hidden');
+                }
+                const canvas = await html2canvas(element, { scale: 3, useCORS: true, backgroundColor: "#ffffff", windowWidth: 794 });
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                pdf.addImage(canvas.toDataURL('image/jpeg', 1.0), 'JPEG', 0, 0, 210, 297);
+                const fileName = `Invoice-${document.getElementById('invNumber').value.replace(/\//g, '-')}.pdf`;
+                pdf.save(fileName);
+                
+                Swal.fire({ title: 'Berhasil!', text: 'Data tersimpan & PDF diunduh.', icon: 'success', confirmButtonColor: '#0f172a' }).then((r) => { if(r.isConfirmed) resetSystem(); });
+            } catch (e) { Swal.fire('Error', e.message, 'error'); }
+            btn.innerText = "SIMPAN & DOWNLOAD PDF"; btn.disabled = false;
+        }
+    </script>
+</body>
+</html>
